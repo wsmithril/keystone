@@ -297,7 +297,7 @@ int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
     KS_MEMDB_REC * rec = NULL;
     int i = 0;
 
-    for (i = 0; i < 2; i ++) {
+    for (i = 0; !rec && db->hash[i] && i < 2; i ++) {
         uint64_t idx = hash % (db->size << i);
         KS_MEMDB_REC * rec_prev = NULL;
         // lock slot
@@ -315,7 +315,6 @@ int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
             rec_prev = rec;
         }
         unlock_slot(db, i, idx);
-        if (rec) break;
     }
 
     if (rec) {
@@ -340,12 +339,11 @@ static void ks_memdb_dumpdb(const KS_MEMDB * db) {
 
     for (i = 0; i < 2; i++) {
         if (!db->hash[i]) break;
-        printf("=== TABLE %d ===\n", i);
+        printf("\n=== TABLE %d ===\n", i);
         for (pos = 0; pos < db->size << i; pos ++) {
-            printf("Node %d\n", pos);
+            printf("Hash slot %d\n", pos);
             for (lv = 1, rec = db->hash[i][pos]; rec; rec = rec->next, lv++) {
-                space(lv * 2);
-                printf("| key %s, value %s\n", rec->key, rec->value);
+                printf("  | key %s, value %s\n", rec->key, rec->value);
             }
         }
     }
@@ -385,18 +383,30 @@ static ks_memdb_ut(KS_MEMDB * db) {
         sprintf(k, "%05d", i);
         ks_memdb_add(db, k, 6, k, 6, ADDMODE_APPEND);
         rec = ks_memdb_lookup(db, k, 6);
-        // key in rec MUST be the same with k, but not the same pointer
         if (!( (strcmp(rec->key, k) == 0)
             && (k != rec->key)
             && (6 == rec->sk)
             && (strncmp(k, rec->value, 5) == 0)
             && (strcmp(k, rec->value + 5) == 0))) {
             printf("TEST append not pass\n");
+            exit(2);
         }
     }
     printf("=== ADD append pass ===\n");
     ks_memdb_dumpdb(db);
 
+    // testing delete
+    for (i = 1; i < 100; i += 2) {
+        sprintf(k, "%05d", i);
+        ks_memdb_delete(db, k, 6);
+        rec = ks_memdb_lookup(db, k, 6);
+        if (rec) {
+            printf("TEST DELETE not pass\n");
+            exit(3);
+        }
+    }
+    printf("=== ADD append pass ===\n");
+    ks_memdb_dumpdb(db);
     return;
 }
 
@@ -412,6 +422,5 @@ int main(void) {
 }
 
 #endif
-
 
 // vim: foldmethod=syntax ts=4
