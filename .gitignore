@@ -4,3 +4,8 @@ keystone
 *.a
 *.so.*
 *.so
+
+test/*
+!test/*.c
+!test/*.h
+!test/Makefile
