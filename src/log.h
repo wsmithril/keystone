@@ -25,7 +25,7 @@ int __log(int loglv,
         __log(3, stderr, __LINE__, __FILE__, __VA_ARGS__); \
     } while (0)
 
-#define warning(...) do { \
+#define warnning(...) do { \
         __log(2, stderr, __LINE__, __FILE__, __VA_ARGS__); \
     } while (0)
 

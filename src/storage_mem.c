@@ -25,16 +25,23 @@
 #define lock_record(rec)    do { ((KS_MEMDB_REC*)rec)->flags |=  MDB_RECLOCK; } while(0)
 #define unlock_record(rec)  do { ((KS_MEMDB_REC*)rec)->flags &= ~MDB_RECLOCK; } while(0)
 
+#define ks_memdb_rehash_step(db) do {\
+    if (rehashing(db)) ks_memdb_rehash_one(db); \
+} while(0)
+
 #define wait_and_lock_slot(db, t, idx) do { \
     while (slot_locked(db, t, idx)); \
     lock_slot(db, t, idx); \
 } while(0)
+
+#define wait_and_lock_record(rec) do { \
+    while (record_locked(rec)); \
+    lock_record(rec); \
+} while(0)
+
 // ================== STITIC METHODS ========================
-static KS_MEMDB_REC *  ks_memdb_lookup(KS_MEMDB * db,
-        const char * key, const size_t sk);
 
 static void ks_memdb_rehash_one(KS_MEMDB * db);
-static void ks_memdb_move_to_table(KS_MEMDB * db, int table, KS_MEMDB_REC * rec);
 static int ks_memdb_extend(KS_MEMDB * db);
 static int ks_memdb_need_rehash(KS_MEMDB* db);
 
@@ -42,6 +49,7 @@ static void * memndup(const void * p, const size_t sz);
 
 // ================ Now, to bussiness ================
 
+#define round_up(n, r) (((n) + (r) - 1) / (r))
 #define round2_64(v) do { \
     v --; \
     v |= v >> 1; \
@@ -64,7 +72,7 @@ static void * memndup(const void * p, const size_t sz) {
 static __attribute__((always_inline)) int keycmp(
         const void * key1, const size_t len1,
         const void * key2, const size_t len2) {
-    return (len2 - len1 == 0)? 0: memcmp(key1, key2, len1);
+    return (len2 == len1)? memcmp(key1, key2, len1): 0;
 }
 
 int ks_memdb_new(KS_MEMDB * db, DBConfig * cfg) {
@@ -73,6 +81,8 @@ int ks_memdb_new(KS_MEMDB * db, DBConfig * cfg) {
         MEMDB_DEFAULT;
 
     assert(db && cfg);
+
+    memset(db, 0, sizeof(KS_MEMDB));
 
     // round up the to power of 2
     round2_64(init_size);
@@ -101,76 +111,87 @@ int ks_memdb_new(KS_MEMDB * db, DBConfig * cfg) {
     return OK;
 }
 
-static KS_MEMDB_REC * ks_memdb_lookup(KS_MEMDB * db,const char * key, const size_t sk) {
+KS_MEMDB_REC * ks_memdb_lookup(KS_MEMDB * db,const char * key, const size_t sk) {
     uint64_t hash = HASH(key, sk);
     KS_MEMDB_REC * hr = NULL;
     int i = 0;
 
     // try two hash table, 2 here is not a magic
-    for (i = 0; i < 2; i++) {
-        if (!db->hash[i]) break;
+    for (i = 0; !hr && i < 2 && db->hash[i]; i++) {
         for (hr = (db->hash[i])[hash % (db->size << i)]; hr; hr = hr->next) {
             if (keycmp(hr->key, hr->sk, key, sk) == 0) break;
         }
-        if (i == 0 && rehashing(db)) ks_memdb_rehash_one(db);
-        if (hr) break;
     }
 
     return hr;
 }
 
 static void ks_memdb_rehash_one(KS_MEMDB * db) {
-    KS_MEMDB_REC * hr = NULL;
+    KS_MEMDB_REC * hr = NULL, * temp = NULL;
+    uint64_t hash = 0;
 
     // rehash records in one hash slots
-    if (db->used == 0) {
+    if (db->used[0] == 0) {
         // no more keys in first hash table, free this one
         free(db->hash[0]);
         db->hash[0] = db->hash[1];
         db->hash[1] = NULL;
+        db->size *= 2;
+        db->used[0] = db->used[1];
+        db->used[1] = 0;
+        free(db->slot_lock[0]);
+        db->slot_lock[0] = db->slot_lock[1];
+        db->slot_lock[1] = NULL;
         unset_rehash(db);
+        notice("Database rehashing done, current size %d.", db->size);
         return;
     }
 
     // get next slot in first hash table
-    while ((db->hash[0])[db->redirect_idx]) {
+    while (!db->hash[0][db->redirect_idx]) {
         db->redirect_idx ++;
         if (db->redirect_idx >= db->size) {
-            if (!db->used) return; // avoid possible deadlock
+            if (db->used[0] == 0) return; // avoid possible deadlock
             db->redirect_idx = 0;
         }
     }
 
-    debug("Rehashing record %ld", db->redirect_idx);;
+    debug("Rehashing record %ld, %d done, %d left",
+            db->redirect_idx, db->used[1], db->used[0]);
 
     // lock hash slot in firest table [=[
     wait_and_lock_slot(db, 0, db->redirect_idx);
-    for (hr = (db->hash[0])[db->redirect_idx]; hr; hr = hr->next) {
-        ks_memdb_move_to_table(db, 1, hr);
-        db->used[0]--;
-    }
-    // ]=]
-    (db->hash[0])[db->redirect_idx] = NULL;
-    unlock_slot(db, 0, db->redirect_idx);
-    return;
-}
 
-static void ks_memdb_move_to_table(KS_MEMDB * db, int table, KS_MEMDB_REC * rec) {
-    uint64_t hash = HASH(rec->key, rec->sk) % (db->size << table);
-    // lock hash slot in second table [=[
-    wait_and_lock_slot(db, table, hash);
-    rec->next = (db->hash[table])[hash];
-    (db->hash[table])[hash] = rec;
-    db->used[table]++;
-    // unlock ]=]
-    unlock_slot(db, table, hash);
+    hr = db->hash[0][db->redirect_idx];
+    while (hr) {
+        temp = hr->next;
+        hash = HASH(hr->key, hr->sk) % (db->size << 1);
+        wait_and_lock_slot(db, 1, hash);
+        hr->next = db->hash[1][hash];
+        db->hash[1][hash] = hr;
+        unlock_slot(db, 1, hash);
+        db->used[1]++;
+        db->used[0]--;
+        hr = temp;
+    }
+
+    // ]=]
+    db->hash[0][db->redirect_idx] = NULL;
+    unlock_slot(db, 0, db->redirect_idx);
     return;
 }
 
 static int ks_memdb_need_rehash(KS_MEMDB* db) {
     if (rehashing(db)) return OK; // already rehashing
     if (db->used[0] * 1.0 / db->size > KS_MEMDB_THR_FILL) {
-        if (ks_memdb_extend(db)) return EXTEND_ERR;
+        if (ks_memdb_extend(db)) {
+            warnning("Extend db fail, size %d", db->size);
+            return EXTEND_ERR;
+        }
+
+        debug("Database needs rehashing, size: %d, used %d",
+                db->size, db->used[0]);
+
         db->redirect_idx = 0;
         set_rehash(db);
     }
@@ -180,14 +201,18 @@ static int ks_memdb_need_rehash(KS_MEMDB* db) {
 static int ks_memdb_extend(KS_MEMDB * db) {
     if (db->hash[1]) return EXTEND_ERR;
     debug("extending hash table %x, orig size: %d", db, db->size);
+
     db->hash[1] = (KS_MEMDB_REC ** )
         malloc(sizeof(KS_MEMDB_REC *) * 2 * db->size);
-    db->slot_lock[1] = (uint8_t *) malloc(sizeof(uint8_t) * (db->size + 3) / 4);
+    db->slot_lock[1] = (uint8_t *) malloc(sizeof(uint8_t) * round_up(db->size * 2, 8));
+
     if (!db->hash[1] || !db->slot_lock[1]) return NOMEM;
+
     memset(db->hash[1], 0, sizeof(KS_MEMDB_REC *) * 2 * db->size);
-    memset(db->slot_lock[1], 0, sizeof(uint8_t) * (db->size + 3) / 4);
+    memset(db->slot_lock[1], 0, sizeof(uint8_t) * round_up(db->size * 2, 8));
     db->redirect_idx = 0;
     set_rehash(db);
+
     return OK;
 }
 
@@ -196,39 +221,47 @@ int ks_memdb_add(KS_MEMDB * db,
         const void * value, const size_t sv,
         uint8_t mode) {
     // add to second hash table when we are rehashing
-    int table = rehashing(db)? 1: 0;
-    uint64_t hash = HASH(key, sk) % (db->size << table);
+    int      i    = 0;
+    uint64_t hash = 0;
     KS_MEMDB_REC * rec = NULL;
 
-    // lock slot [=[
-    wait_and_lock_slot(db, table, hash);
-    // find the record
-    for (rec = db->hash[table][hash];
-         rec && keycmp(rec->key, rec->sk, key, sk);
-         rec = rec->next);
+    for (i = 0; !rec && i < 2 && db->hash[i]; i++) {
+        // lock slot [=[
+        hash = HASH(key, sk) % (db->size << i);
+        wait_and_lock_slot(db, i, hash);
+        // find the record
+        for (rec = db->hash[i][hash];
+             rec && keycmp(rec->key, rec->sk, key, sk);
+             rec = rec->next);
+        unlock_slot(db, i, hash);
+    }
 
     if (rec) {
         // key in hashtable
         switch (mode? mode: (db->mode? db->mode: ADDMODE_REPLACE)) {
-            case ADDMODE_SKIP: {
-                unlock_slot(db, table, hash);
-                return ADD_SKIPPED;
-            }
+            case ADDMODE_SKIP: return ADD_SKIPPED;
 
             case ADDMODE_REPLACE: {
+                wait_and_lock_record(rec);
                 free(rec->value);
                 rec->value = memndup(value, sv);
                 rec->sv    = sv;
+                unlock_record(rec);
                 break;
             }
 
             case ADDMODE_APPEND: {
-                void * temp = malloc(sv + rec->sv);
+                if (((char *)rec->value)[rec->sv]
+                 || ((char *)value)[sv]) return APPEND_NONSTR;
+
+                wait_and_lock_record(rec);
+                void * temp = malloc(sv + rec->sv - 1);
                 memcpy(temp, rec->value, rec->sv);
-                memcpy(temp + rec->sv, value, sv);
+                memcpy(temp + rec->sv - 1, value, sv);
                 free(rec->value);
                 rec->value = temp;
                 rec->sv   += sv;
+                unlock_record(rec);
                 break;
             }
 
@@ -238,6 +271,7 @@ int ks_memdb_add(KS_MEMDB * db,
         }
     } else {
         // key not in hashtable
+        int table = rehashing(db)? 1: 0;
         KS_MEMDB_REC * new_rec = (KS_MEMDB_REC *)
             malloc(sizeof(KS_MEMDB_REC));
         new_rec->key   = memndup(key,   sk);
@@ -246,13 +280,17 @@ int ks_memdb_add(KS_MEMDB * db,
         new_rec->sv    = sv;
         new_rec->next  = db->hash[table][hash];
         new_rec->flags = 0;
+        wait_and_lock_slot(db, table, hash);
         db->hash[table][hash] = new_rec;
+        unlock_slot(db, table, hash);
+        db->used[table]++;
     }
-    // unlock slot
-    unlock_slot(db, table, hash);
 
+    ks_memdb_need_rehash(db);
+    ks_memdb_rehash_step(db);
     return OK;
 }
+
 
 int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
     uint64_t hash =HASH(key, sk);
@@ -291,38 +329,84 @@ int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
 }
 
 #ifdef __MEMDB_TEST__
+
+static void ks_memdb_dumpdb(const KS_MEMDB * db) {
+#define space(n) do { \
+    int idx = (n); \
+    while(idx--) printf(" "); \
+} while(0)
+    int i = 0, pos = 0, lv = 0;
+    KS_MEMDB_REC * rec = NULL;
+
+    for (i = 0; i < 2; i++) {
+        if (!db->hash[i]) break;
+        printf("=== TABLE %d ===\n", i);
+        for (pos = 0; pos < db->size << i; pos ++) {
+            printf("Node %d\n", pos);
+            for (lv = 1, rec = db->hash[i][pos]; rec; rec = rec->next, lv++) {
+                space(lv * 2);
+                printf("| key %s, value %s\n", rec->key, rec->value);
+            }
+        }
+    }
+
+    return;
+#undef space
+}
+
+static ks_memdb_ut(KS_MEMDB * db) {
+    int i = 0;
+    char k[128]; // key byffer
+    KS_MEMDB_REC * rec;
+
 #define show(rec) do { \
     if (rec) printf("key: %s, value: %s\n", (char*)rec->key, (char*)rec->value); \
     else printf("Not found\n"); \
 } while (0)
 
+    // TEST adding 100 keys
+    for (i = 0; i < 100; i++) {
+        sprintf(k, "%05d", i);
+        ks_memdb_add(db, k, 6, k, 6, ADDMODE_REPLACE);
+        rec = ks_memdb_lookup(db, k, 6);
+        // key in rec MUST be the same with k, but not the same pointer
+        if (!( (strcmp(rec->key, k) == 0)
+            && (k != rec->key)
+            && (6 == rec->sk))) {
+            printf("TEST add not pass\n");
+            exit(1);
+        }
+    }
+    printf("=== ADD test pass ===\n");
+    ks_memdb_dumpdb(db);
+
+    // TEST adding 100 keys
+    for (i = 0; i < 100; i++) {
+        sprintf(k, "%05d", i);
+        ks_memdb_add(db, k, 6, k, 6, ADDMODE_APPEND);
+        rec = ks_memdb_lookup(db, k, 6);
+        // key in rec MUST be the same with k, but not the same pointer
+        if (!( (strcmp(rec->key, k) == 0)
+            && (k != rec->key)
+            && (6 == rec->sk)
+            && (strncmp(k, rec->value, 5) == 0)
+            && (strcmp(k, rec->value + 5) == 0))) {
+            printf("TEST append not pass\n");
+        }
+    }
+    printf("=== ADD append pass ===\n");
+    ks_memdb_dumpdb(db);
+
+    return;
+}
+
 int main(void) {
     KS_MEMDB test_db;
     DBConfig cfg;
-    KS_MEMDB_REC * rec;
 
-    cfg.memdb.size = 1;
-
+    cfg.memdb.size = 16;
     ks_memdb_new(&test_db, &cfg);
-
-    ks_memdb_add(&test_db, "abc", 4, "12345", 5, ADDMODE_REPLACE);
-    rec = ks_memdb_lookup(&test_db, "abc", 4);
-    show(rec);
-
-    ks_memdb_add(&test_db, "abc1", 5, "12345", 5, ADDMODE_REPLACE);
-    rec = ks_memdb_lookup(&test_db, "abc1", 5);
-    show(rec);
-
-    ks_memdb_add(&test_db, "abc", 4, "abcde", 5, ADDMODE_APPEND);
-    rec = ks_memdb_lookup(&test_db, "abc", 4);
-    show(rec);
-
-    ks_memdb_delete(&test_db, "abc", 4);
-    rec = ks_memdb_lookup(&test_db, "abc", 4);
-    show(rec);
-
-    rec = ks_memdb_lookup(&test_db, "abc1", 5);
-    show(rec);
+    ks_memdb_ut(&test_db);
 
     return 0;
 }
