@@ -1,17 +1,25 @@
-# makefile foe keystone
+# makefile for keystone
 
 CC = gcc
-CFLAGS += -O2 -Wall
+CFLAGS += -O2 -Wall -fPIC
 LDFLAGS += -pthread
+
+objects = log.o hash.o storage_mem.o
 
 .PHONY: all clean
 
+all: libkeystone.a libkeystone.so
+
 clean:
-	rm -f *.o keystone
+	rm -f $(objects) keystone
+	rm -f libkeystone.a
+	rm -f libkeystone.so.$(VERSION)
 
-all: keystone
+libkeystone.a: $(objects)
+	$(AR) $(ARFLAGS) $@ $(objects)
 
-keystone: log.o hash.o storage_mem.o
+libkeystone.so: $(objects)
+	$(CC) -shared -Wl,-soname,$@ -o $@ $(objects)
 
 log.c: log.h
 

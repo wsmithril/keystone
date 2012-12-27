@@ -6,7 +6,6 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "config.h"
 #include "storage_mem.h"
 #include "log.h"
 #include "hash.h"
@@ -75,19 +74,15 @@ static __attribute__((always_inline)) int keycmp(
     return (len2 == len1)? memcmp(key1, key2, len1): 0;
 }
 
-int ks_memdb_new(KS_MEMDB * db, DBConfig * cfg) {
-    uint64_t init_size = (cfg->memdb.size != 0)?
-        cfg->memdb.size:
-        MEMDB_DEFAULT;
-
-    assert(db && cfg);
-
+int ks_memdb_new(KS_MEMDB * db, const uint32_t size) {
+    uint64_t init_size = size? size: MEMDB_DEFAULT;
+    assert(db);
     memset(db, 0, sizeof(KS_MEMDB));
 
     // round up the to power of 2
     round2_64(init_size);
 
-    debug("Creating database of size %lu, orig size: %lu", init_size, cfg->memdb.size);
+    debug("Creating database of size %lu, given size: %lu", init_size, size);
     db->hash[0] = (KS_MEMDB_REC ** )
         malloc(sizeof(KS_MEMDB_REC * ) * init_size);
 
@@ -327,9 +322,7 @@ int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
     }
 }
 
-#ifdef __MEMDB_TEST__
-
-static void ks_memdb_dumpdb(const KS_MEMDB * db) {
+void ks_memdb_dumpdb(const KS_MEMDB * db) {
 #define space(n) do { \
     int idx = (n); \
     while(idx--) printf(" "); \
@@ -343,7 +336,7 @@ static void ks_memdb_dumpdb(const KS_MEMDB * db) {
         for (pos = 0; pos < db->size << i; pos ++) {
             printf("Hash slot %d\n", pos);
             for (lv = 1, rec = db->hash[i][pos]; rec; rec = rec->next, lv++) {
-                printf("  | key %s, value %s\n", rec->key, rec->value);
+                printf("  | key %s, value %s\n", (char*)rec->key, (char*)rec->value);
             }
         }
     }
@@ -351,76 +344,5 @@ static void ks_memdb_dumpdb(const KS_MEMDB * db) {
     return;
 #undef space
 }
-
-static ks_memdb_ut(KS_MEMDB * db) {
-    int i = 0;
-    char k[128]; // key byffer
-    KS_MEMDB_REC * rec;
-
-#define show(rec) do { \
-    if (rec) printf("key: %s, value: %s\n", (char*)rec->key, (char*)rec->value); \
-    else printf("Not found\n"); \
-} while (0)
-
-    // TEST adding 100 keys
-    for (i = 0; i < 100; i++) {
-        sprintf(k, "%05d", i);
-        ks_memdb_add(db, k, 6, k, 6, ADDMODE_REPLACE);
-        rec = ks_memdb_lookup(db, k, 6);
-        // key in rec MUST be the same with k, but not the same pointer
-        if (!( (strcmp(rec->key, k) == 0)
-            && (k != rec->key)
-            && (6 == rec->sk))) {
-            printf("TEST add not pass\n");
-            exit(1);
-        }
-    }
-    printf("=== ADD test pass ===\n");
-    ks_memdb_dumpdb(db);
-
-    // TEST adding 100 keys
-    for (i = 0; i < 100; i++) {
-        sprintf(k, "%05d", i);
-        ks_memdb_add(db, k, 6, k, 6, ADDMODE_APPEND);
-        rec = ks_memdb_lookup(db, k, 6);
-        if (!( (strcmp(rec->key, k) == 0)
-            && (k != rec->key)
-            && (6 == rec->sk)
-            && (strncmp(k, rec->value, 5) == 0)
-            && (strcmp(k, rec->value + 5) == 0))) {
-            printf("TEST append not pass\n");
-            exit(2);
-        }
-    }
-    printf("=== ADD append pass ===\n");
-    ks_memdb_dumpdb(db);
-
-    // testing delete
-    for (i = 1; i < 100; i += 2) {
-        sprintf(k, "%05d", i);
-        ks_memdb_delete(db, k, 6);
-        rec = ks_memdb_lookup(db, k, 6);
-        if (rec) {
-            printf("TEST DELETE not pass\n");
-            exit(3);
-        }
-    }
-    printf("=== ADD append pass ===\n");
-    ks_memdb_dumpdb(db);
-    return;
-}
-
-int main(void) {
-    KS_MEMDB test_db;
-    DBConfig cfg;
-
-    cfg.memdb.size = 16;
-    ks_memdb_new(&test_db, &cfg);
-    ks_memdb_ut(&test_db);
-
-    return 0;
-}
-
-#endif
 
 // vim: foldmethod=syntax ts=4

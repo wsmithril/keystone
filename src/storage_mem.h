@@ -16,7 +16,6 @@
 #define APPEND_NONSTR 6
 
 #include <stdint.h>
-#include "config.h"
 
 #define MEMDB_DEFAULT 1024
 
@@ -60,11 +59,13 @@ int ks_memdb_add(KS_MEMDB * db,
         const void * value, const size_t sv,
         uint8_t mode);
 
-int ks_memdb_new(KS_MEMDB * db, DBConfig * cfg);
+int ks_memdb_new(KS_MEMDB * db, const uint32_t size);
 
 int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk);
 
 KS_MEMDB_REC * ks_memdb_lookup(KS_MEMDB * db,
         const char * key, const size_t sk);
+
+void ks_memdb_dumpdb(const KS_MEMDB * db);
 
 #endif /* _KS_STORAGE_MEM_H */
