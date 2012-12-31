@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #include "storage_mem.h"
 #include "log.h"
@@ -61,21 +62,20 @@ static KS_MEMDB_REC * ks_memdb_lookup(void * in_db,
     v ++; \
 } while (0)
 
-__attribute__((always_inline))
-static void * memndup(const void * p, const size_t sz) {
+static inline void * memndup(const void * p, const size_t sz) {
     void * ret = malloc(sz);
     memcpy(ret, p, sz);
     return ret;
 }
 
 #define HASH(key, len) (*db->hash_func)((const void *)key, len)
-static __attribute__((always_inline)) int keycmp(
+static inline int keycmp(
         const void * key1, const size_t len1,
         const void * key2, const size_t len2) {
     return (len2 == len1)? memcmp(key1, key2, len1): 0;
 }
 
-int ks_memdb_new(void * in_db, const uint32_t size) {
+int ks_memdb_new(void * in_db, const uint64_t size) {
     uint64_t init_size = size? size: MEMDB_DEFAULT;
     KS_MEMDB * db = in_db;
     assert(db);
@@ -269,9 +269,16 @@ int ks_memdb_add(void * in_db,
             }
 
             case ADDMODE_INCR: {
-                if (rec->sv != 4) return INCR_NAN;
+                if (rec->sv != sizeof(uint32_t)) return INCR_NAN;
                 wait_and_lock_record(rec);
-                *(int32_t*)(rec->value)++;
+                ++ *(int32_t*)(rec->value);
+                unlock_record(rec);
+            }
+
+            case ADDMODE_DECR: {
+                if (rec->sv != sizeof(uint32_t)) return INCR_NAN;
+                wait_and_lock_record(rec);
+                -- *(int32_t*)(rec->value);
                 unlock_record(rec);
             }
 
@@ -385,16 +392,16 @@ void ks_memdb_destory(void * in_db) {
 }
 
 int ks_memdb_get_value(void * db,
-        const char * key, const size_t sk,
-        char * out_value, size_t * out_sv) {
+        const void * key, const size_t sk,
+        void * out_value, size_t * out_sv) {
     KS_MEMDB_REC * rec = ks_memdb_lookup(db, key, sk);
     if (rec) {
-        *out_sv = rec->sv;
-        memcpy(out_value, rec->value, rec->sv);
+        if (out_sv) *out_sv = rec->sv;
+        if (out_value) memcpy(out_value, rec->value, rec->sv);
         return OK;
     } else {
         return NOT_FOUND;
     }
 }
-``
+
 // vim: foldmethod=syntax ts=4

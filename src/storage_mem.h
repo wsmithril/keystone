@@ -15,7 +15,9 @@
 #define NOT_FOUND     5
 #define APPEND_NONSTR 6
 #define INCR_NAN      7
+
 #include <stdint.h>
+#include "storage.h"
 
 #define MEMDB_DEFAULT 1024
 
@@ -33,14 +35,7 @@ struct KS_MEMDB_REC {
 };
 typedef struct KS_MEMDB_REC KS_MEMDB_REC;
 
-enum KS_MEMDB_ADD_MODE {
-    ADDMODE_NOOP = 0,
-    ADDMODE_APPEND,
-    ADDMODE_REPLACE,
-    ADDMODE_SKIP,
-    ADDMODE_INCR,
-};
-typedef enum KS_MEMDB_ADD_MODE KS_MEMDB_ADD_MODE;
+typedef enum KS_ADD_MODE KS_MEMDB_ADD_MODE;
 
 struct KS_MEMDB {
     uint64_t size;
@@ -59,7 +54,7 @@ int ks_memdb_add(void * in_db,
         const void * value, const size_t sv,
         const KS_MEMDB_ADD_MODE);
 
-int ks_memdb_new(void * in_db, const uint32_t size);
+int ks_memdb_new(void * in_db, const uint64_t size);
 
 void ks_memdb_destory(void * in_db);
 
@@ -68,7 +63,7 @@ int ks_memdb_delete(void * in_db, const void * key, const size_t sk);
 void ks_memdb_dumpdb(const void * in_db);
 
 int ks_memdb_get_value(void * db,
-        const char * key, const size_t sk,
-        char * out_value, size_t * out_sv);
+        const void * key, const size_t sk,
+        void * out_value, size_t * out_sv);
 
 #endif /* _KS_STORAGE_MEM_H */

@@ -4,7 +4,7 @@ CC = gcc
 CFLAGS += -O2 -Wall -fPIC
 LDFLAGS += -pthread
 
-objects = log.o hash.o storage_mem.o
+objects = log.o hash.o storage_mem.o keystone.o
 
 .PHONY: all clean
 

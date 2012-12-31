@@ -5,7 +5,7 @@
 #define LOGLV 3
 #endif
 
-#include <stdlib.h>
+#include <stdio.h>
 
 int __log(int loglv,
           FILE * f,
