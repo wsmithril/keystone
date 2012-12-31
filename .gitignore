@@ -5,6 +5,8 @@ keystone
 *.so.*
 *.so
 
+temp/*
+
 test/*
 !test/*.c
 !test/*.h
