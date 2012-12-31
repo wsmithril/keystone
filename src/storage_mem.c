@@ -40,11 +40,12 @@
 
 // ================== STITIC METHODS ========================
 
-static void ks_memdb_rehash_one(KS_MEMDB * db);
-static int ks_memdb_extend(KS_MEMDB * db);
-static int ks_memdb_need_rehash(KS_MEMDB* db);
-
+static void ks_memdb_rehash_one(void * db);
+static int ks_memdb_extend(void * db);
+static int ks_memdb_need_rehash(void * db);
 static void * memndup(const void * p, const size_t sz);
+static KS_MEMDB_REC * ks_memdb_lookup(void * in_db,
+        const char * key, const size_t sk);
 
 // ================ Now, to bussiness ================
 
@@ -74,8 +75,9 @@ static __attribute__((always_inline)) int keycmp(
     return (len2 == len1)? memcmp(key1, key2, len1): 0;
 }
 
-int ks_memdb_new(KS_MEMDB * db, const uint32_t size) {
+int ks_memdb_new(void * in_db, const uint32_t size) {
     uint64_t init_size = size? size: MEMDB_DEFAULT;
+    KS_MEMDB * db = in_db;
     assert(db);
     memset(db, 0, sizeof(KS_MEMDB));
 
@@ -106,7 +108,9 @@ int ks_memdb_new(KS_MEMDB * db, const uint32_t size) {
     return OK;
 }
 
-KS_MEMDB_REC * ks_memdb_lookup(KS_MEMDB * db,const char * key, const size_t sk) {
+static KS_MEMDB_REC * ks_memdb_lookup(void * in_db,
+        const char * key, const size_t sk) {
+    KS_MEMDB * db = in_db;
     uint64_t hash = HASH(key, sk);
     KS_MEMDB_REC * hr = NULL;
     int i = 0;
@@ -121,7 +125,8 @@ KS_MEMDB_REC * ks_memdb_lookup(KS_MEMDB * db,const char * key, const size_t sk) 
     return hr;
 }
 
-static void ks_memdb_rehash_one(KS_MEMDB * db) {
+static void ks_memdb_rehash_one(void * in_db) {
+    KS_MEMDB * db = in_db;
     KS_MEMDB_REC * hr = NULL, * temp = NULL;
     uint64_t hash = 0;
 
@@ -176,7 +181,8 @@ static void ks_memdb_rehash_one(KS_MEMDB * db) {
     return;
 }
 
-static int ks_memdb_need_rehash(KS_MEMDB* db) {
+static int ks_memdb_need_rehash(void * in_db) {
+    KS_MEMDB * db = in_db;
     if (rehashing(db)) return OK; // already rehashing
     if (db->used[0] * 1.0 / db->size > KS_MEMDB_THR_FILL) {
         if (ks_memdb_extend(db)) {
@@ -193,7 +199,8 @@ static int ks_memdb_need_rehash(KS_MEMDB* db) {
     return OK;
 }
 
-static int ks_memdb_extend(KS_MEMDB * db) {
+static int ks_memdb_extend(void * in_db) {
+    KS_MEMDB * db = in_db;
     if (db->hash[1]) return EXTEND_ERR;
     debug("extending hash table %x, orig size: %d", db, db->size);
 
@@ -211,11 +218,12 @@ static int ks_memdb_extend(KS_MEMDB * db) {
     return OK;
 }
 
-int ks_memdb_add(KS_MEMDB * db,
+int ks_memdb_add(void * in_db,
         const void * key,   const size_t sk,
         const void * value, const size_t sv,
-        uint8_t mode) {
+        const KS_MEMDB_ADD_MODE mode) {
     // add to second hash table when we are rehashing
+    KS_MEMDB * db = in_db;
     int      i    = 0;
     uint64_t hash = 0;
     KS_MEMDB_REC * rec = NULL;
@@ -260,7 +268,13 @@ int ks_memdb_add(KS_MEMDB * db,
                 break;
             }
 
-            case ADDMODE_INCR:
+            case ADDMODE_INCR: {
+                if (rec->sv != 4) return INCR_NAN;
+                wait_and_lock_record(rec);
+                *(int32_t*)(rec->value)++;
+                unlock_record(rec);
+            }
+
             case ADDMODE_NOOP:
                 break;
         }
@@ -286,9 +300,9 @@ int ks_memdb_add(KS_MEMDB * db,
     return OK;
 }
 
-
-int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
-    uint64_t hash =HASH(key, sk);
+int ks_memdb_delete(void * in_db, const void * key, const size_t sk) {
+    KS_MEMDB * db = in_db;
+    uint64_t hash = HASH(key, sk);
     KS_MEMDB_REC * rec = NULL;
     int i = 0;
 
@@ -322,11 +336,12 @@ int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk) {
     }
 }
 
-void ks_memdb_dumpdb(const KS_MEMDB * db) {
+void ks_memdb_dumpdb(const void * in_db) {
 #define space(n) do { \
     int idx = (n); \
     while(idx--) printf(" "); \
 } while(0)
+    const KS_MEMDB * db = in_db;
     int i = 0, pos = 0, lv = 0;
     KS_MEMDB_REC * rec = NULL;
 
@@ -345,4 +360,41 @@ void ks_memdb_dumpdb(const KS_MEMDB * db) {
 #undef space
 }
 
+void ks_memdb_destory(void * in_db) {
+    KS_MEMDB * db = in_db;
+    KS_MEMDB_REC * rec = NULL;
+    int i = 0, j = 0;
+
+    for (i = 0; db->hash[i] && i < 2; i++) {
+        for (j = 0; j < db->size << i; j++) {
+            for (rec = db->hash[i][j]; rec; rec = rec->next) {
+                free(rec->key);
+                free(rec->value);
+                free(rec);
+            }
+        }
+    }
+
+    free(db->slot_lock[0]);
+    free(db->slot_lock[1]);
+    free(db->hash[0]);
+    free(db->hash[0]);
+
+    memset(db, 0, sizeof(KS_MEMDB));
+    return;
+}
+
+int ks_memdb_get_value(void * db,
+        const char * key, const size_t sk,
+        char * out_value, size_t * out_sv) {
+    KS_MEMDB_REC * rec = ks_memdb_lookup(db, key, sk);
+    if (rec) {
+        *out_sv = rec->sv;
+        memcpy(out_value, rec->value, rec->sv);
+        return OK;
+    } else {
+        return NOT_FOUND;
+    }
+}
+``
 // vim: foldmethod=syntax ts=4

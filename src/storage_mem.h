@@ -14,7 +14,7 @@
 #define ADD_SKIPPED   4
 #define NOT_FOUND     5
 #define APPEND_NONSTR 6
-
+#define INCR_NAN      7
 #include <stdint.h>
 
 #define MEMDB_DEFAULT 1024
@@ -54,18 +54,21 @@ struct KS_MEMDB {
 };
 typedef struct KS_MEMDB KS_MEMDB;
 
-int ks_memdb_add(KS_MEMDB * db,
+int ks_memdb_add(void * in_db,
         const void * key,   const size_t sk,
         const void * value, const size_t sv,
-        uint8_t mode);
+        const KS_MEMDB_ADD_MODE);
 
-int ks_memdb_new(KS_MEMDB * db, const uint32_t size);
+int ks_memdb_new(void * in_db, const uint32_t size);
 
-int ks_memdb_delete(KS_MEMDB * db, const void * key, const size_t sk);
+void ks_memdb_destory(void * in_db);
 
-KS_MEMDB_REC * ks_memdb_lookup(KS_MEMDB * db,
-        const char * key, const size_t sk);
+int ks_memdb_delete(void * in_db, const void * key, const size_t sk);
 
-void ks_memdb_dumpdb(const KS_MEMDB * db);
+void ks_memdb_dumpdb(const void * in_db);
+
+int ks_memdb_get_value(void * db,
+        const char * key, const size_t sk,
+        char * out_value, size_t * out_sv);
 
 #endif /* _KS_STORAGE_MEM_H */
