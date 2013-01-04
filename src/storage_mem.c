@@ -383,9 +383,9 @@ void ks_memdb_destory(void * in_db) {
     }
 
     free(db->slot_lock[0]);
-    free(db->slot_lock[1]);
+    if (db->slot_lock[1]) free(db->slot_lock[1]);
     free(db->hash[0]);
-    free(db->hash[0]);
+    if (db->hash[1]) free(db->hash[1]);
 
     memset(db, 0, sizeof(KS_MEMDB));
     return;
