@@ -22,7 +22,7 @@ struct KS_DB {
     void * db;
     struct {
         int  (*add)(void *, const void *, const size_t, const void *,
-                const size_t, const KS_MEMDB_ADD_MODE);
+                const size_t, const KS_ADD_MODE);
         int  (*del)(void *, const void *, const size_t);
         int  (*create)(void *, const uint64_t);
         void (*destory)(void *);
@@ -60,7 +60,7 @@ int ks_db_append(KS_DB *db, const char key[], const char value[]);
 int ks_db_get_raw(KS_DB * db,
         const char key[], void * out_value, size_t * out_sv);
 int ks_db_get_str(KS_DB * db, const char key[], char * value);
-int ks_db_get_int(KS_DB * db, const char key[], uint32_t * value);
+int ks_db_get_num(KS_DB * db, const char key[], uint32_t * value);
 int ks_db_replace(KS_DB *db, const char key[],
         const void * value,  const size_t sv);
 

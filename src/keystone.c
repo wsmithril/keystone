@@ -35,8 +35,10 @@ int ks_db_create(KS_DB * db, const DB_TYPE t, const size_t sz) {
 }
 
 void ks_db_drop(KS_DB * db) {
-    if (db) (db->op.destory)(db->db);
-    memset(db, 0, sizeof(KS_DB));
+    if (db) {
+        (db->op.destory)(db->db);
+        memset(db, 0, sizeof(KS_DB));
+    }
 }
 
 // this is boring...
@@ -84,7 +86,7 @@ int ks_db_get_str(KS_DB * db, const char key[], char * value) {
     return ks_db_get(db, key, strlen(key) + 1, value, NULL);
 }
 
-int ks_db_get_int(KS_DB * db, const char key[], uint32_t * value) {
+int ks_db_get_num(KS_DB * db, const char key[], uint32_t * value) {
     return ks_db_get(db, key, strlen(key) + 1, value, NULL);
 }
 
