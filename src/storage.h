@@ -26,4 +26,7 @@ typedef enum KS_ADD_MODE KS_ADD_MODE;
 #define APPEND_NONSTR 6
 #define INCR_NAN      7
 
+void * memndup(const void *, const size_t);
+int keycmp(const void *, const size_t, const void *, const size_t);
+
 #endif /* _STORAGE_H_ */

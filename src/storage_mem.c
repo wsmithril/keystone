@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "storage.h"
 #include "storage_mem.h"
 #include "log.h"
 #include "hash.h"
@@ -44,7 +45,6 @@
 static void ks_memdb_rehash_one(void * db);
 static int ks_memdb_extend(void * db);
 static int ks_memdb_need_rehash(void * db);
-static void * memndup(const void * p, const size_t sz);
 static KS_MEMDB_REC * ks_memdb_lookup(void * in_db,
         const char * key, const size_t sk);
 
@@ -62,18 +62,7 @@ static KS_MEMDB_REC * ks_memdb_lookup(void * in_db,
     v ++; \
 } while (0)
 
-static inline void * memndup(const void * p, const size_t sz) {
-    void * ret = malloc(sz);
-    memcpy(ret, p, sz);
-    return ret;
-}
-
 #define HASH(key, len) (*db->hash_func)((const void *)key, len)
-static inline int keycmp(
-        const void * key1, const size_t len1,
-        const void * key2, const size_t len2) {
-    return (len2 == len1)? memcmp(key1, key2, len1): len1 - len2;
-}
 
 int ks_memdb_new(void * in_db, const uint64_t size) {
     uint64_t init_size = size? size: MEMDB_DEFAULT;
@@ -156,8 +145,7 @@ static void ks_memdb_rehash_one(void * in_db) {
         }
     }
 
-    debug("Rehashing record %ld, %d done, %d left",
-            db->redirect_idx, db->used[1], db->used[0]);
+    debug("Rehashing slot %ld, %d left", db->redirect_idx, db->used[0]);
 
     // lock hash slot in firest table [=[
     wait_and_lock_slot(db, 0, db->redirect_idx);
@@ -190,7 +178,7 @@ static int ks_memdb_need_rehash(void * in_db) {
             return EXTEND_ERR;
         }
 
-        debug("Database needs rehashing, size: %d, used %d",
+        notice("Database needs rehashing, size: %d, used %d",
                 db->size, db->used[0]);
 
         db->redirect_idx = 0;
@@ -202,7 +190,7 @@ static int ks_memdb_need_rehash(void * in_db) {
 static int ks_memdb_extend(void * in_db) {
     KS_MEMDB * db = in_db;
     if (db->hash[1]) return EXTEND_ERR;
-    debug("extending hash table %x, orig size: %d", db, db->size);
+    debug("extending hash table %p, orig size: %d", db, db->size);
 
     db->hash[1] = (KS_MEMDB_REC ** )
         malloc(sizeof(KS_MEMDB_REC *) * 2 * db->size);
@@ -240,7 +228,6 @@ int ks_memdb_add(void * in_db,
     }
 
     if (rec) {
-        debug("Key %s already in db, rec->key: %s", key, rec->key);
         // key in hashtable
         switch (mode? mode: (db->mode? db->mode: ADDMODE_REPLACE)) {
             case ADDMODE_SKIP: return ADD_SKIPPED;
@@ -270,17 +257,19 @@ int ks_memdb_add(void * in_db,
             }
 
             case ADDMODE_INCR: {
-                if (rec->sv != sizeof(uint32_t)) return INCR_NAN;
+                if (rec->sv != sizeof(int32_t)) return INCR_NAN;
                 wait_and_lock_record(rec);
-                ++ *(int32_t*)(rec->value);
+                (*(int32_t*)(rec->value)) += 1;
                 unlock_record(rec);
+                break;
             }
 
             case ADDMODE_DECR: {
-                if (rec->sv != sizeof(uint32_t)) return INCR_NAN;
+                if (rec->sv != sizeof(int32_t)) return INCR_NAN;
                 wait_and_lock_record(rec);
-                -- *(int32_t*)(rec->value);
+                (*(int32_t*)(rec->value)) -= 1;
                 unlock_record(rec);
+                break;
             }
 
             case ADDMODE_NOOP:
@@ -288,19 +277,21 @@ int ks_memdb_add(void * in_db,
         }
     } else {
         // key not in hashtable
-        int table = rehashing(db)? 1: 0;
+        // simply using i will do here,
+        // hash[(i - 1)] shall be the last availiable table here.
+        -- i;
         KS_MEMDB_REC * new_rec = (KS_MEMDB_REC *)
             malloc(sizeof(KS_MEMDB_REC));
         new_rec->key   = memndup(key,   sk);
         new_rec->value = memndup(value, sv);
         new_rec->sk    = sk;
         new_rec->sv    = sv;
-        new_rec->next  = db->hash[table][hash];
+        new_rec->next  = db->hash[i][hash];
         new_rec->flags = 0;
-        wait_and_lock_slot(db, table, hash);
-        db->hash[table][hash] = new_rec;
-        unlock_slot(db, table, hash);
-        db->used[table]++;
+        wait_and_lock_slot(db, i, hash);
+        db->hash[i][hash] = new_rec;
+        unlock_slot(db, i, hash);
+        db->used[i]++;
     }
 
     ks_memdb_need_rehash(db);

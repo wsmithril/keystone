@@ -56,9 +56,9 @@ int ks_db_set_str(KS_DB * db, const char key[], const char value[]) {
             key, strlen(key) + 1, value, strlen(value) + 1, ADDMODE_SKIP);
 }
 
-int ks_db_set_num(KS_DB * db, const char key[], const uint32_t n) {
+int ks_db_set_num(KS_DB * db, const char key[], const int32_t n) {
     return ks_db_add(db,
-            key, strlen(key) + 1, &n, sizeof(uint32_t), ADDMODE_SKIP);
+            key, strlen(key) + 1, &n, sizeof(int32_t), ADDMODE_SKIP);
 }
 
 int ks_db_incr(KS_DB * db, const char key[]) {
@@ -66,7 +66,7 @@ int ks_db_incr(KS_DB * db, const char key[]) {
 }
 
 int ks_db_decr(KS_DB * db, const char key[]) {
-    return ks_db_add(db, key, strlen(key) + 1, NULL, 0, ADDMODE_INCR);
+    return ks_db_add(db, key, strlen(key) + 1, NULL, 0, ADDMODE_DECR);
 }
 
 int ks_db_append(KS_DB *db, const char key[], const char value[]) {
@@ -86,7 +86,7 @@ int ks_db_get_str(KS_DB * db, const char key[], char * value) {
     return ks_db_get(db, key, strlen(key) + 1, value, NULL);
 }
 
-int ks_db_get_num(KS_DB * db, const char key[], uint32_t * value) {
+int ks_db_get_num(KS_DB * db, const char key[], int32_t * value) {
     return ks_db_get(db, key, strlen(key) + 1, value, NULL);
 }
 

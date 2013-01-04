@@ -53,14 +53,14 @@ int ks_db_create(KS_DB * db, const DB_TYPE t, const size_t sz);
 int ks_db_set_raw(KS_DB * db, const char key[],
         const void * value, const size_t sv);
 int ks_db_set_str(KS_DB * db, const char key[], const char value[]);
-int ks_db_set_num(KS_DB * db, const char key[], const uint32_t n);
+int ks_db_set_num(KS_DB * db, const char key[], const int32_t n);
 int ks_db_incr(KS_DB * db, const char key[]);
 int ks_db_decr(KS_DB * db, const char key[]);
 int ks_db_append(KS_DB *db, const char key[], const char value[]);
 int ks_db_get_raw(KS_DB * db,
         const char key[], void * out_value, size_t * out_sv);
 int ks_db_get_str(KS_DB * db, const char key[], char * value);
-int ks_db_get_num(KS_DB * db, const char key[], uint32_t * value);
+int ks_db_get_num(KS_DB * db, const char key[], int32_t * value);
 int ks_db_replace(KS_DB *db, const char key[],
         const void * value,  const size_t sv);
 

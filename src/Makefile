@@ -4,7 +4,7 @@ CC = gcc
 CFLAGS += -O2 -Wall -fPIC -DLOGLV=5
 LDFLAGS += -pthread
 
-objects = log.o hash.o storage_mem.o keystone.o
+objects = log.o hash.o storage_mem.o keystone.o storage.o
 
 .PHONY: all clean
 
@@ -24,6 +24,8 @@ libkeystone.so: $(objects)
 log.c: log.h
 
 storage_mem.c: log.h storage_mem.h hash.h
+
+storage.c: storage.h
 
 hash.c: hash.h
 
