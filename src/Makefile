@@ -27,6 +27,8 @@ storage_mem.c: log.h storage_mem.h hash.h
 
 hash.c: hash.h
 
+keystone.c: log.h storage.h keystone.h storage_mem.h
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
