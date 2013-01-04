@@ -72,7 +72,7 @@ static inline void * memndup(const void * p, const size_t sz) {
 static inline int keycmp(
         const void * key1, const size_t len1,
         const void * key2, const size_t len2) {
-    return (len2 == len1)? memcmp(key1, key2, len1): 0;
+    return (len2 == len1)? memcmp(key1, key2, len1): len1 - len2;
 }
 
 int ks_memdb_new(void * in_db, const uint64_t size) {
@@ -240,6 +240,7 @@ int ks_memdb_add(void * in_db,
     }
 
     if (rec) {
+        debug("Key %s already in db, rec->key: %s", key, rec->key);
         // key in hashtable
         switch (mode? mode: (db->mode? db->mode: ADDMODE_REPLACE)) {
             case ADDMODE_SKIP: return ADD_SKIPPED;

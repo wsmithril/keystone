@@ -5,17 +5,6 @@
 #ifndef _KS_STORAGE_MEM_H
 #define _KS_STORAGE_MEM_H
 
-// errors
-#define OK      0
-#define NOMEM   1
-#define MEMFULL 2
-#define EXTEND_ERR  3
-
-#define ADD_SKIPPED   4
-#define NOT_FOUND     5
-#define APPEND_NONSTR 6
-#define INCR_NAN      7
-
 #include <stdint.h>
 #include "storage.h"
 

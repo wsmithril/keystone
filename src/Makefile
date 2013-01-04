@@ -1,7 +1,7 @@
 # makefile for keystone
 
 CC = gcc
-CFLAGS += -O2 -Wall -fPIC
+CFLAGS += -O2 -Wall -fPIC -DLOGLV=5
 LDFLAGS += -pthread
 
 objects = log.o hash.o storage_mem.o keystone.o
