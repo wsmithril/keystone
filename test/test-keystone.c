@@ -12,20 +12,73 @@ void unit_test(KS_DB * db) {
     char k[256], v[256];
     int i = 0;
     const int ntest = 100;
+    int ret = 0;
 
     // test - set/getstr
+    printf("Testing for add string.\n");
     for (i = 0; i < ntest; i++) {
-        uint32_t out;
         sprintf(k, "%05d", i);
         ks_db_set_str(db, k, k);
         ks_db_get_str(db, k, v);
         if (strcmp(k, v)) {
             printf("get/set str fail. got %s, supposed %s\n", v, k);
+            exit(1);
         }
     }
 
+    // test - append
+    printf("Testing for append string.\n");
+    for (i = 0; i < ntest; i++) {
+        sprintf(k, "%05d", i);
+        ks_db_append(db, k, k);
+        ks_db_get_str(db, k, v);
+        if (strncmp(v, k, 5) || strcmp(v + 5, k)) {
+            printf("append fail. got %s, except %s%s\n", v, k, k);
+            exit(2);
+        }
+    }
 
-    printf("All done!");
+    // test - set/get num
+    printf("Testing for set/get number.\n");
+    for (i = 0; i < ntest; i++) {
+        int32_t num;
+        sprintf(k, "num-%05d", i);
+        if ((ret = ks_db_set_num(db, k, (int32_t)i))) {
+            printf("Set key %s failed, ret = %d\n", k, ret);
+            continue;
+        }
+
+        if ((ret = ks_db_get_num(db, k, &num))) {
+            printf("Get %s fail, ret = %d\n", k, ret);
+        }
+        if (num != (int32_t)i) {
+            printf("%s Get %d, supposed %d\n", k, num, (int32_t)i);
+            exit(3);
+        }
+    }
+
+    // testing incr/decr
+    printf("testing for incr/decr\n");
+    for (i = 0; i < ntest; i++) {
+        int32_t num;
+        sprintf(k, "num-%05d", i);
+        if ((ret = i % 2? ks_db_incr(db, k): ks_db_decr(db, k))) {
+            printf("incr/decr fail, key: %s, ret: %d\n", k, ret);
+            continue;
+        }
+
+        if ((ret = ks_db_get_num(db, k, &num))) {
+            printf("Get %s fail, ret = %d\n", k, ret);
+            continue;
+        }
+
+        if (num != i + (i % 2? 1: -1)) {
+            printf("incr/decr failed, got %d, supposed %d\n", num, i + (i % 2? 1: -1));
+        }
+
+    }
+
+    // (db->op.debug)(db->db);
 }
 
 
