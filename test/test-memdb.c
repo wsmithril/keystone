@@ -57,7 +57,7 @@ int main(void) {
     KS_MEMDB test_db;
     ks_memdb_new(&test_db, 1);
     ks_memdb_ut(&test_db);
-
+    ks_memdb_destory(&test_db);
     return 0;
 }
 
