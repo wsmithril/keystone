@@ -11,7 +11,7 @@
 void unit_test(KS_DB * db) {
     char k[256], v[256];
     int i = 0;
-    const int ntest = 100;
+    const int ntest = 5000;
     int ret = 0;
 
     // test - set/getstr
@@ -75,10 +75,10 @@ void unit_test(KS_DB * db) {
         if (num != i + (i % 2? 1: -1)) {
             printf("incr/decr failed, got %d, supposed %d\n", num, i + (i % 2? 1: -1));
         }
-
     }
 
-    // (db->op.debug)(db->db);
+    printf("All done!\n");
+    //(db->op.debug)(db->db);
 }
 
 
