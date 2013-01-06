@@ -242,8 +242,8 @@ int ks_memdb_add(void * in_db,
             }
 
             case ADDMODE_APPEND: {
-                if (((char *)rec->value)[rec->sv]
-                 || ((char *)value)[sv]) return APPEND_NONSTR;
+                if (((char*)rec->value)[rec->sv - 1]
+                 || ((char*)value)[sv - 1]) return APPEND_NONSTR;
 
                 wait_and_lock_record(rec);
                 void * temp = malloc(sv + rec->sv - 1);
@@ -251,7 +251,7 @@ int ks_memdb_add(void * in_db,
                 memcpy(temp + rec->sv - 1, value, sv);
                 free(rec->value);
                 rec->value = temp;
-                rec->sv   += sv;
+                rec->sv   += sv - 1;
                 unlock_record(rec);
                 break;
             }
@@ -316,7 +316,7 @@ int ks_memdb_delete(void * in_db, const void * key, const size_t sk) {
                 if (rec_prev) {
                     rec_prev->next = rec->next;
                 } else {
-                    db->hash[i][idx] = NULL;
+                    db->hash[i][idx] = rec->next;
                 }
                 break;
             }
@@ -361,15 +361,17 @@ void ks_memdb_dumpdb(const void * in_db) {
 
 void ks_memdb_destory(void * in_db) {
     KS_MEMDB * db = in_db;
-    KS_MEMDB_REC * rec = NULL;
+    KS_MEMDB_REC * rec = NULL, * rec_next;
     int i = 0, j = 0;
 
     for (i = 0; db->hash[i] && i < 2; i++) {
         for (j = 0; j < db->size << i; j++) {
-            for (rec = db->hash[i][j]; rec; rec = rec->next) {
+            for (rec = db->hash[i][j]; rec;) {
                 free(rec->key);
                 free(rec->value);
+                rec_next = rec->next;
                 free(rec);
+                rec = rec_next;
             }
         }
     }
@@ -388,7 +390,7 @@ int ks_memdb_get_value(void * db,
         void * out_value, size_t * out_sv) {
     KS_MEMDB_REC * rec = ks_memdb_lookup(db, key, sk);
     if (rec) {
-        if (out_sv) *out_sv = rec->sv;
+        if (out_sv) * out_sv = rec->sv;
         if (out_value) memcpy(out_value, rec->value, rec->sv);
         return OK;
     } else {

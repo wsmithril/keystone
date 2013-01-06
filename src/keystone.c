@@ -37,6 +37,7 @@ int ks_db_create(KS_DB * db, const DB_TYPE t, const size_t sz) {
 void ks_db_drop(KS_DB * db) {
     if (db) {
         (db->op.destory)(db->db);
+        if (db->db) free(db->db);
         memset(db, 0, sizeof(KS_DB));
     }
 }

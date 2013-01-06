@@ -11,7 +11,7 @@
 #define MEMDB_DEFAULT 1024
 
 #ifndef KS_MEMDB_THR_FILL
-#   define KS_MEMDB_THR_FILL 2.5
+#   define KS_MEMDB_THR_FILL 2.75
 #endif
 
 struct KS_MEMDB_REC {
