@@ -308,19 +308,16 @@ int ks_memdb_delete(void * in_db, const void * key, const size_t sk) {
     for (i = 0; !rec && db->hash[i] && i < 2; i ++) {
         uint64_t idx = hash % (db->size << i);
         KS_MEMDB_REC * rec_prev = NULL;
-        // lock slot
+
         wait_and_lock_slot(db, i, idx);
-        for (rec = db->hash[i][idx]; rec; rec = rec->next) {
+        for (rec = db->hash[i][idx]; rec; rec_prev = rec, rec = rec->next) {
             if (0 == keycmp(key, sk, rec->key, rec->sk)) {
                 // found it
-                if (rec_prev) {
-                    rec_prev->next = rec->next;
-                } else {
-                    db->hash[i][idx] = rec->next;
-                }
+                // Try some nasty tricks...
+                // (p? a: b) is not an lvalue, but *(p? &a: &b) is a valid one.
+                *(rec_prev? &rec_prev->next: &db->hash[i][idx]) = rec->next;
                 break;
             }
-            rec_prev = rec;
         }
         unlock_slot(db, i, idx);
     }
